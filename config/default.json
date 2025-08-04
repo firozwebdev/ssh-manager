@@ -1,0 +1,26 @@
+{
+  "ssh": {
+    "defaultKeyType": "rsa",
+    "defaultKeySize": 4096,
+    "defaultDirectory": "~/.ssh",
+    "supportedKeyTypes": ["rsa", "ed25519", "ecdsa"],
+    "keySizes": {
+      "rsa": [2048, 3072, 4096],
+      "ecdsa": [256, 384, 521]
+    }
+  },
+  "clipboard": {
+    "timeout": 5000,
+    "fallbackMethods": ["pbcopy", "xclip", "clip"]
+  },
+  "security": {
+    "enablePassphrase": false,
+    "backupKeys": true,
+    "maxKeyAge": 365
+  },
+  "ui": {
+    "colors": true,
+    "animations": true,
+    "verbose": false
+  }
+}
