@@ -3,11 +3,13 @@
 const { Command } = require("commander");
 const SSHManager = require("./utils/ssh");
 const ClipboardManager = require("./utils/clipboard-simple");
+const SystemSetup = require("./utils/system-setup");
 const config = require("../config/default.json");
 
 const program = new Command();
 const sshManager = new SSHManager(config.ssh);
 const clipboardManager = new ClipboardManager(config.clipboard);
+const systemSetup = new SystemSetup();
 
 // Utility functions
 const log = {
@@ -37,7 +39,26 @@ program
   .option("-f, --force", "overwrite existing key")
   .action(async (options) => {
     try {
-      console.log("🔐 Generating SSH key pair...\n");
+      console.log("🔐 SSH Manager - Automatic Setup & Key Generation\n");
+
+      // Auto-setup system if needed
+      console.log("🔧 Checking system requirements...");
+      if (!systemSetup.checkSSHKeygen()) {
+        console.log("⚠️  OpenSSH not found. Setting up automatically...\n");
+
+        const setupSuccess = await systemSetup.setupSystem();
+        if (!setupSuccess) {
+          log.error(
+            "System setup failed. Please install OpenSSH manually and try again."
+          );
+          process.exit(1);
+        }
+        console.log("");
+      } else {
+        console.log("✅ OpenSSH is available!\n");
+      }
+
+      console.log("🔑 Generating SSH key pair...");
 
       // Set defaults
       const keyOptions = {
