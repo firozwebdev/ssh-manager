@@ -12,7 +12,12 @@ class SSHManager {
       defaultDirectory: path.join(os.homedir(), '.ssh'),
       ...config
     };
-    
+
+    // Resolve tilde in directory path
+    if (this.config.defaultDirectory.startsWith('~')) {
+      this.config.defaultDirectory = path.join(os.homedir(), this.config.defaultDirectory.slice(2));
+    }
+
     this.ensureSSHDirectory();
   }
 
