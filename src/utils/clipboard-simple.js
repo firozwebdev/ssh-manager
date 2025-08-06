@@ -96,7 +96,7 @@ class SimpleClipboardManager {
       methods.push('wsl-clipboard');
     }
 
-    return methods.length > 0 ? methods : ['xclip', 'xsel']; // fallback
+    return methods; // Return empty array if no tools found - this will trigger auto-installation
   }
 
   /**
@@ -149,7 +149,29 @@ class SimpleClipboardManager {
     // Get current platform methods
     const methods = this.getFallbackMethods();
 
-    // Try fallback methods
+    // If no methods available on Linux, try to install clipboard tools first
+    if (os.platform() === 'linux' && methods.length === 0) {
+      console.log('🔧 No clipboard tools found. Installing automatically...');
+      const installed = await this.installLinuxClipboardTools();
+
+      if (installed) {
+        // Get methods again after installation
+        const newMethods = this.getLinuxMethods();
+        for (const method of newMethods) {
+          try {
+            await this.copyWithFallback(text, method);
+            return { method, success: true };
+          } catch (retryError) {
+            console.warn(`Method ${method} failed after installation:`, retryError.message);
+          }
+        }
+      }
+
+      // If installation failed or tools still don't work, provide manual instructions
+      return this.handleClipboardFailure(text);
+    }
+
+    // Try available methods
     for (const method of methods) {
       try {
         await this.copyWithFallback(text, method);
@@ -159,9 +181,9 @@ class SimpleClipboardManager {
       }
     }
 
-    // If all methods failed, try to install clipboard tools and retry
+    // If all methods failed on Linux, try to install and retry
     if (os.platform() === 'linux') {
-      console.log('🔧 Clipboard tools not found. Attempting to install...');
+      console.log('🔧 All clipboard methods failed. Attempting to install tools...');
       const installed = await this.installLinuxClipboardTools();
 
       if (installed) {
