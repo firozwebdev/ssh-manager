@@ -1,5 +1,5 @@
 const { execSync, spawn } = require('child_process');
-const fs = require('fs-extra');
+const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
@@ -258,10 +258,18 @@ class SSHManager {
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const backupDir = path.join(backupPath, `ssh-backup-${timestamp}`);
-      
-      await fs.ensureDir(backupDir);
-      await fs.copy(this.config.defaultDirectory, backupDir);
-      
+
+      // Create backup directory
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      // Copy SSH directory contents
+      const files = fs.readdirSync(this.config.defaultDirectory);
+      for (const file of files) {
+        const srcPath = path.join(this.config.defaultDirectory, file);
+        const destPath = path.join(backupDir, file);
+        fs.copyFileSync(srcPath, destPath);
+      }
+
       return backupDir;
     } catch (error) {
       throw new Error(`Backup failed: ${error.message}`);

@@ -1,6 +1,6 @@
 # 🔐 SSH Manager
 
-[![npm version](https://badge.fury.io/js/%40ssh-tools%2Fssh-manager.svg)](https://badge.fury.io/js/%40ssh-tools%2Fssh-manager)
+[![npm version](https://badge.fury.io/js/ssh-manager-pro.svg)](https://badge.fury.io/js/ssh-manager-pro)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A robust, production-ready SSH key manager with automatic clipboard integration, cross-platform support, and zero-configuration setup.
@@ -23,17 +23,17 @@ A robust, production-ready SSH key manager with automatic clipboard integration,
 
 ```bash
 # Install globally
-npm install -g @ssh-tools/ssh-manager
+npm install -g ssh-manager-pro
 
 # Or use npx (no installation required)
-npx @ssh-tools/ssh-manager generate
+npx ssh-manager-pro generate
 ```
 
 ### Development Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/ssh-tools/ssh-manager.git
+git clone https://github.com/sabuz/ssh-manager-pro.git
 cd ssh-manager
 
 # Install dependencies and setup

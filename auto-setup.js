@@ -101,20 +101,34 @@ class AutoSetup {
    * Install Node.js dependencies
    */
   async installDependencies() {
-    console.log('📦 Installing Node.js dependencies...');
+    console.log('📦 Checking Node.js dependencies...');
 
     try {
-      // Check if package.json exists
-      if (!fs.existsSync('package.json')) {
-        throw new Error('package.json not found');
+      // Check if we're in an npm package installation context
+      if (process.env.npm_config_global || process.env.npm_package_name) {
+        console.log('   ✅ Dependencies managed by npm (skipping manual install)');
+        return;
       }
 
-      // Install dependencies
+      // Check if package.json exists
+      if (!fs.existsSync('package.json')) {
+        console.log('   ✅ No package.json found (standalone installation)');
+        return;
+      }
+
+      // Check if node_modules exists
+      if (fs.existsSync('node_modules')) {
+        console.log('   ✅ Node.js dependencies already installed');
+        return;
+      }
+
+      // Install dependencies only in development context
+      console.log('   📦 Installing Node.js dependencies...');
       execSync('npm install', { stdio: 'pipe' });
       console.log('   ✅ Node.js dependencies installed');
 
     } catch (error) {
-      throw new Error(`Failed to install Node.js dependencies: ${error.message}`);
+      console.log('   ⚠️  Dependency installation skipped (non-critical)');
     }
   }
 
@@ -303,18 +317,18 @@ class AutoSetup {
     
     try {
       switch (distro) {
-        case 'ubuntu':
-        case 'debian':
-          execSync('sudo apt update && sudo apt install -y openssh-client', { stdio: 'inherit' });
-          break;
-        case 'fedora':
-          execSync('sudo dnf install -y openssh-clients', { stdio: 'inherit' });
-          break;
-        case 'arch':
-          execSync('sudo pacman -S --noconfirm openssh', { stdio: 'inherit' });
-          break;
-        default:
-          console.log('   ⚠️  Unknown distribution, OpenSSH will be installed when needed');
+      case 'ubuntu':
+      case 'debian':
+        execSync('sudo apt update && sudo apt install -y openssh-client', { stdio: 'inherit' });
+        break;
+      case 'fedora':
+        execSync('sudo dnf install -y openssh-clients', { stdio: 'inherit' });
+        break;
+      case 'arch':
+        execSync('sudo pacman -S --noconfirm openssh', { stdio: 'inherit' });
+        break;
+      default:
+        console.log('   ⚠️  Unknown distribution, OpenSSH will be installed when needed');
       }
     } catch (error) {
       console.log('   ⚠️  OpenSSH installation failed (will retry when needed)');
@@ -329,18 +343,18 @@ class AutoSetup {
     
     try {
       switch (distro) {
-        case 'ubuntu':
-        case 'debian':
-          execSync('sudo apt install -y xclip xsel', { stdio: 'inherit' });
-          break;
-        case 'fedora':
-          execSync('sudo dnf install -y xclip xsel', { stdio: 'inherit' });
-          break;
-        case 'arch':
-          execSync('sudo pacman -S --noconfirm xclip xsel', { stdio: 'inherit' });
-          break;
-        default:
-          console.log('   ⚠️  Unknown distribution, clipboard tools will be installed when needed');
+      case 'ubuntu':
+      case 'debian':
+        execSync('sudo apt install -y xclip xsel', { stdio: 'inherit' });
+        break;
+      case 'fedora':
+        execSync('sudo dnf install -y xclip xsel', { stdio: 'inherit' });
+        break;
+      case 'arch':
+        execSync('sudo pacman -S --noconfirm xclip xsel', { stdio: 'inherit' });
+        break;
+      default:
+        console.log('   ⚠️  Unknown distribution, clipboard tools will be installed when needed');
       }
     } catch (error) {
       console.log('   ⚠️  Clipboard tools installation failed (will retry when needed)');

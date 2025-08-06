@@ -1,4 +1,4 @@
-const fs = require('fs-extra');
+const fs = require('fs');
 const path = require('path');
 const chalk = require('chalk');
 const ora = require('ora');
@@ -32,7 +32,7 @@ class BackupCommand {
       const fullBackupPath = path.join(backupPath, backupName);
       
       // Ensure backup directory exists
-      await fs.ensureDir(fullBackupPath);
+      fs.mkdirSync(fullBackupPath, { recursive: true });
 
       // Get list of keys
       const keys = this.sshManager.listKeys();
@@ -51,14 +51,14 @@ class BackupCommand {
           // Always backup public key
           if (fs.existsSync(key.publicKeyPath)) {
             const publicBackupPath = path.join(fullBackupPath, `${key.name}.pub`);
-            await fs.copy(key.publicKeyPath, publicBackupPath);
+            fs.copyFileSync(key.publicKeyPath, publicBackupPath);
             backupLog.push(`✓ Public key: ${key.name}.pub`);
           }
 
           // Backup private key if it exists and requested
           if (includePrivateKeys && fs.existsSync(key.privateKeyPath)) {
             const privateBackupPath = path.join(fullBackupPath, key.name);
-            await fs.copy(key.privateKeyPath, privateBackupPath);
+            fs.copyFileSync(key.privateKeyPath, privateBackupPath);
             
             // Set proper permissions on Unix systems
             if (process.platform !== 'win32') {
@@ -91,7 +91,7 @@ class BackupCommand {
         }
       };
 
-      await fs.writeJson(path.join(fullBackupPath, 'manifest.json'), manifest, { spaces: 2 });
+      fs.writeFileSync(path.join(fullBackupPath, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
       // Compress if requested
       let finalPath = fullBackupPath;
