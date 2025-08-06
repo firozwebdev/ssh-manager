@@ -152,7 +152,10 @@ class SimpleClipboardManager {
 
     // Special handling for Linux - auto-install if no tools available
     if (os.platform() === 'linux') {
-      if (methods.length === 0) {
+      // Check if we actually have working clipboard tools
+      const hasWorkingTools = await this.checkLinuxClipboardTools();
+
+      if (!hasWorkingTools) {
         console.log('📋 Setting up clipboard functionality...');
         const installed = await this.installLinuxClipboardToolsQuietly();
 
@@ -548,6 +551,56 @@ class SimpleClipboardManager {
   }
 
   /**
+   * Check if Linux clipboard tools are actually working
+   */
+  async checkLinuxClipboardTools() {
+    if (os.platform() !== 'linux') return true;
+
+    // WSL can use Windows clipboard
+    if (this.isWSL()) {
+      try {
+        const { execSync } = require('child_process');
+        execSync('echo "test" | clip.exe', { stdio: 'pipe', timeout: 5000 });
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    // Check if any clipboard tool actually works
+    const tools = ['xclip', 'xsel', 'wl-copy'];
+
+    for (const tool of tools) {
+      try {
+        const { execSync } = require('child_process');
+
+        // Check if tool exists
+        execSync(`which ${tool}`, { stdio: 'ignore' });
+
+        // Test if it actually works
+        if (tool === 'xclip') {
+          execSync('echo "test" | xclip -selection clipboard', { stdio: 'pipe', timeout: 5000 });
+          const result = execSync('xclip -selection clipboard -o', { encoding: 'utf8', timeout: 5000 });
+          if (result.trim() === 'test') return true;
+        } else if (tool === 'xsel') {
+          execSync('echo "test" | xsel --clipboard --input', { stdio: 'pipe', timeout: 5000 });
+          const result = execSync('xsel --clipboard --output', { encoding: 'utf8', timeout: 5000 });
+          if (result.trim() === 'test') return true;
+        } else if (tool === 'wl-copy') {
+          execSync('echo "test" | wl-copy', { stdio: 'pipe', timeout: 5000 });
+          const result = execSync('wl-paste', { encoding: 'utf8', timeout: 5000 });
+          if (result.trim() === 'test') return true;
+        }
+      } catch (error) {
+        // Tool doesn't exist or doesn't work, continue to next
+        continue;
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * Install Linux clipboard tools automatically (quiet version)
    */
   async installLinuxClipboardToolsQuietly() {
@@ -557,7 +610,9 @@ class SimpleClipboardManager {
       // Detect Linux distribution
       const distro = this.detectLinuxDistro();
 
-      // Try to install without too much output
+      console.log('🔧 Installing clipboard tools...');
+
+      // Try to install with user interaction for sudo
       switch (distro) {
         case 'ubuntu':
         case 'debian':
@@ -565,14 +620,21 @@ class SimpleClipboardManager {
         case 'pop':
         case 'kali':
           try {
-            execSync('sudo apt update -qq && sudo apt install -y -qq xclip xsel', {
-              stdio: 'pipe',
+            console.log('   Updating package list...');
+            execSync('sudo apt update -qq', {
+              stdio: ['inherit', 'pipe', 'pipe'],
+              timeout: 60000
+            });
+            console.log('   Installing xclip and xsel...');
+            execSync('sudo apt install -y xclip xsel', {
+              stdio: ['inherit', 'pipe', 'pipe'],
               timeout: 60000
             });
           } catch (error) {
-            // Try without quiet flags
+            // Try without quiet flags if needed
+            console.log('   Retrying installation...');
             execSync('sudo apt update && sudo apt install -y xclip xsel', {
-              stdio: 'pipe',
+              stdio: ['inherit', 'pipe', 'pipe'],
               timeout: 60000
             });
           }
@@ -581,14 +643,15 @@ class SimpleClipboardManager {
         case 'fedora':
         case 'centos':
         case 'rhel':
+          console.log('   Installing via dnf/yum...');
           try {
-            execSync('sudo dnf install -y -q xclip xsel', {
-              stdio: 'pipe',
+            execSync('sudo dnf install -y xclip xsel', {
+              stdio: ['inherit', 'pipe', 'pipe'],
               timeout: 60000
             });
           } catch {
-            execSync('sudo yum install -y -q xclip xsel', {
-              stdio: 'pipe',
+            execSync('sudo yum install -y xclip xsel', {
+              stdio: ['inherit', 'pipe', 'pipe'],
               timeout: 60000
             });
           }
@@ -596,22 +659,25 @@ class SimpleClipboardManager {
 
         case 'arch':
         case 'manjaro':
-          execSync('sudo pacman -S --noconfirm --quiet xclip xsel', {
-            stdio: 'pipe',
+          console.log('   Installing via pacman...');
+          execSync('sudo pacman -S --noconfirm xclip xsel', {
+            stdio: ['inherit', 'pipe', 'pipe'],
             timeout: 60000
           });
           break;
 
         case 'opensuse':
-          execSync('sudo zypper install -y --quiet xclip xsel', {
-            stdio: 'pipe',
+          console.log('   Installing via zypper...');
+          execSync('sudo zypper install -y xclip xsel', {
+            stdio: ['inherit', 'pipe', 'pipe'],
             timeout: 60000
           });
           break;
 
         case 'alpine':
-          execSync('sudo apk add --quiet xclip xsel', {
-            stdio: 'pipe',
+          console.log('   Installing via apk...');
+          execSync('sudo apk add xclip xsel', {
+            stdio: ['inherit', 'pipe', 'pipe'],
             timeout: 60000
           });
           break;
@@ -635,19 +701,21 @@ class SimpleClipboardManager {
           }
       }
 
-      // Verify installation quietly
-      try {
-        execSync('which xclip', { stdio: 'ignore' });
-        console.log('✅ Clipboard tools installed successfully');
+      // Verify installation by actually testing the tools
+      console.log('   Verifying installation...');
+
+      // Wait a moment for installation to complete
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Test if tools actually work
+      const working = await this.checkLinuxClipboardTools();
+
+      if (working) {
+        console.log('✅ Clipboard tools installed and working');
         return true;
-      } catch (error) {
-        try {
-          execSync('which xsel', { stdio: 'ignore' });
-          console.log('✅ Clipboard tools installed successfully');
-          return true;
-        } catch (error2) {
-          return false;
-        }
+      } else {
+        console.log('⚠️  Installation completed but tools not working properly');
+        return false;
       }
     } catch (error) {
       return false;
