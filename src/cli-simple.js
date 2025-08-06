@@ -97,8 +97,14 @@ program
           log.dim(`Key length: ${clipResult.length} characters`);
         } else {
           // Manual copy case
-          log.warning("Automatic clipboard copy not available");
-          log.dim(clipResult.instructions);
+          log.warning("Clipboard copy not available");
+          if (clipResult.text) {
+            console.log('\n📋 Your SSH public key:');
+            console.log('─'.repeat(50));
+            console.log(clipResult.text);
+            console.log('─'.repeat(50));
+            log.dim('Copy the text above to use your SSH key');
+          }
         }
       } catch (clipError) {
         log.warning(
@@ -170,11 +176,17 @@ program
           log.dim(`Length: ${clipResult.length} characters`);
         } else {
           // Manual copy case
-          log.warning("Automatic clipboard copy not available");
+          log.warning("Clipboard copy not available");
           log.info(
             `Key: ${selectedKey.name} (${selectedKey.type.toUpperCase()})`
           );
-          log.dim(clipResult.instructions);
+          if (clipResult.text) {
+            console.log('\n📋 Your SSH public key:');
+            console.log('─'.repeat(50));
+            console.log(clipResult.text);
+            console.log('─'.repeat(50));
+            log.dim('Copy the text above to use your SSH key');
+          }
         }
       } catch (clipError) {
         log.error("Failed to copy key to clipboard");

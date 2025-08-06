@@ -52,6 +52,12 @@ class SimpleClipboardManager {
     const methods = [];
     const { execSync } = require('child_process');
 
+    // WSL detection and Windows clipboard integration (highest priority)
+    if (this.isWSL()) {
+      methods.push('wsl-clipboard');
+      return methods; // WSL can use Windows clipboard directly
+    }
+
     // Check for various Linux clipboard tools
     const linuxTools = [
       'xclip',           // Most common
@@ -89,11 +95,6 @@ class SimpleClipboardManager {
       } catch (error) {
         // GNOME clipboard not available
       }
-    }
-
-    // WSL detection and Windows clipboard integration
-    if (this.isWSL()) {
-      methods.push('wsl-clipboard');
     }
 
     return methods; // Return empty array if no tools found - this will trigger auto-installation
@@ -149,26 +150,30 @@ class SimpleClipboardManager {
     // Get current platform methods
     const methods = this.getFallbackMethods();
 
-    // If no methods available on Linux, try to install clipboard tools first
-    if (os.platform() === 'linux' && methods.length === 0) {
-      console.log('🔧 No clipboard tools found. Installing automatically...');
-      const installed = await this.installLinuxClipboardTools();
+    // Special handling for Linux - auto-install if no tools available
+    if (os.platform() === 'linux') {
+      if (methods.length === 0) {
+        console.log('📋 Setting up clipboard functionality...');
+        const installed = await this.installLinuxClipboardToolsQuietly();
 
-      if (installed) {
-        // Get methods again after installation
-        const newMethods = this.getLinuxMethods();
-        for (const method of newMethods) {
-          try {
-            await this.copyWithFallback(text, method);
-            return { method, success: true };
-          } catch (retryError) {
-            console.warn(`Method ${method} failed after installation:`, retryError.message);
+        if (installed) {
+          // Get methods again after installation
+          const newMethods = this.getLinuxMethods();
+          if (newMethods.length > 0) {
+            for (const method of newMethods) {
+              try {
+                await this.copyWithFallback(text, method);
+                return { method, success: true };
+              } catch (retryError) {
+                // Continue to next method
+              }
+            }
           }
         }
-      }
 
-      // If installation failed or tools still don't work, provide manual instructions
-      return this.handleClipboardFailure(text);
+        // If installation failed, provide manual instructions
+        return this.handleClipboardFailure(text);
+      }
     }
 
     // Try available methods
@@ -177,24 +182,19 @@ class SimpleClipboardManager {
         await this.copyWithFallback(text, method);
         return { method, success: true };
       } catch (fallbackError) {
-        console.warn(`Fallback method ${method} failed:`, fallbackError.message);
-      }
-    }
+        // On Linux, if this is a "command not found" error, try auto-installation
+        if (os.platform() === 'linux' && fallbackError.message.includes('Command not found')) {
+          console.log('🔧 Installing missing clipboard tools...');
+          const installed = await this.installLinuxClipboardToolsQuietly();
 
-    // If all methods failed on Linux, try to install and retry
-    if (os.platform() === 'linux') {
-      console.log('🔧 All clipboard methods failed. Attempting to install tools...');
-      const installed = await this.installLinuxClipboardTools();
-
-      if (installed) {
-        // Retry with newly installed tools
-        const newMethods = this.getLinuxMethods();
-        for (const method of newMethods) {
-          try {
-            await this.copyWithFallback(text, method);
-            return { method, success: true };
-          } catch (retryError) {
-            console.warn(`Retry method ${method} failed:`, retryError.message);
+          if (installed) {
+            // Retry this method after installation
+            try {
+              await this.copyWithFallback(text, method);
+              return { method, success: true };
+            } catch (retryError) {
+              // Installation didn't help, continue to next method
+            }
           }
         }
       }
@@ -548,7 +548,114 @@ class SimpleClipboardManager {
   }
 
   /**
-   * Install Linux clipboard tools automatically
+   * Install Linux clipboard tools automatically (quiet version)
+   */
+  async installLinuxClipboardToolsQuietly() {
+    try {
+      const { execSync } = require('child_process');
+
+      // Detect Linux distribution
+      const distro = this.detectLinuxDistro();
+
+      // Try to install without too much output
+      switch (distro) {
+        case 'ubuntu':
+        case 'debian':
+        case 'mint':
+        case 'pop':
+        case 'kali':
+          try {
+            execSync('sudo apt update -qq && sudo apt install -y -qq xclip xsel', {
+              stdio: 'pipe',
+              timeout: 60000
+            });
+          } catch (error) {
+            // Try without quiet flags
+            execSync('sudo apt update && sudo apt install -y xclip xsel', {
+              stdio: 'pipe',
+              timeout: 60000
+            });
+          }
+          break;
+
+        case 'fedora':
+        case 'centos':
+        case 'rhel':
+          try {
+            execSync('sudo dnf install -y -q xclip xsel', {
+              stdio: 'pipe',
+              timeout: 60000
+            });
+          } catch {
+            execSync('sudo yum install -y -q xclip xsel', {
+              stdio: 'pipe',
+              timeout: 60000
+            });
+          }
+          break;
+
+        case 'arch':
+        case 'manjaro':
+          execSync('sudo pacman -S --noconfirm --quiet xclip xsel', {
+            stdio: 'pipe',
+            timeout: 60000
+          });
+          break;
+
+        case 'opensuse':
+          execSync('sudo zypper install -y --quiet xclip xsel', {
+            stdio: 'pipe',
+            timeout: 60000
+          });
+          break;
+
+        case 'alpine':
+          execSync('sudo apk add --quiet xclip xsel', {
+            stdio: 'pipe',
+            timeout: 60000
+          });
+          break;
+
+        default:
+          // Try common package managers quietly
+          const managers = [
+            'sudo apt update -qq && sudo apt install -y -qq xclip xsel',
+            'sudo dnf install -y -q xclip xsel',
+            'sudo yum install -y -q xclip xsel',
+            'sudo pacman -S --noconfirm --quiet xclip xsel'
+          ];
+
+          for (const cmd of managers) {
+            try {
+              execSync(cmd, { stdio: 'pipe', timeout: 60000 });
+              break;
+            } catch (error) {
+              continue;
+            }
+          }
+      }
+
+      // Verify installation quietly
+      try {
+        execSync('which xclip', { stdio: 'ignore' });
+        console.log('✅ Clipboard tools installed successfully');
+        return true;
+      } catch (error) {
+        try {
+          execSync('which xsel', { stdio: 'ignore' });
+          console.log('✅ Clipboard tools installed successfully');
+          return true;
+        } catch (error2) {
+          return false;
+        }
+      }
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Install Linux clipboard tools automatically (verbose version)
    */
   async installLinuxClipboardTools() {
     console.log('📦 Installing clipboard tools for Linux...');
