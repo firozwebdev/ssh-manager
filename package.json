@@ -12,12 +12,21 @@
   },
   "scripts": {
     "start": "node src/cli.js",
-    "test": "jest",
+    "test": "node test-cross-platform.js",
+    "test:jest": "jest",
     "test:watch": "jest --watch",
+    "test:cross-platform": "node test-cross-platform.js",
+    "install-deps": "node install-cross-platform.js",
+    "setup": "npm install && npm run install-deps",
+    "setup-global": "npm install && npm link",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "build": "pkg . --out-path dist/",
     "install-global": "npm link",
+    "generate": "node src/cli-simple.js generate",
+    "list": "node src/cli-simple.js list",
+    "copy": "node src/cli-simple.js copy",
+    "status": "node src/cli-simple.js status",
     "uninstall-global": "npm unlink"
   },
   "keywords": [

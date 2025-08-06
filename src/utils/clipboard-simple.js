@@ -11,20 +11,130 @@ class SimpleClipboardManager {
   }
 
   /**
-   * Get platform-specific fallback methods
+   * Get platform-specific fallback methods with enhanced detection
    */
   getFallbackMethods() {
     const platform = os.platform();
 
     switch (platform) {
       case 'darwin': // macOS
-        return ['pbcopy'];
+        return this.getMacOSMethods();
       case 'linux':
-        return ['xclip', 'xsel'];
+        return this.getLinuxMethods();
       case 'win32': // Windows
-        return ['powershell-clipboard', 'clip'];
+        return this.getWindowsMethods();
       default:
         return [];
+    }
+  }
+
+  /**
+   * Get macOS clipboard methods
+   */
+  getMacOSMethods() {
+    const methods = [];
+
+    // Check for pbcopy (standard macOS)
+    try {
+      require('child_process').execSync('which pbcopy', { stdio: 'ignore' });
+      methods.push('pbcopy');
+    } catch (error) {
+      // pbcopy not available
+    }
+
+    return methods.length > 0 ? methods : ['pbcopy']; // fallback
+  }
+
+  /**
+   * Get Linux clipboard methods with comprehensive detection
+   */
+  getLinuxMethods() {
+    const methods = [];
+    const { execSync } = require('child_process');
+
+    // Check for various Linux clipboard tools
+    const linuxTools = [
+      'xclip',           // Most common
+      'xsel',            // Alternative
+      'wl-copy',         // Wayland
+      'termux-clipboard-set', // Termux (Android)
+      'pbcopy'           // Some Linux systems have pbcopy
+    ];
+
+    for (const tool of linuxTools) {
+      try {
+        execSync(`which ${tool}`, { stdio: 'ignore' });
+        methods.push(tool);
+      } catch (error) {
+        // Tool not available
+      }
+    }
+
+    // Check for desktop environment specific methods
+    const desktopEnv = process.env.XDG_CURRENT_DESKTOP || process.env.DESKTOP_SESSION || '';
+
+    if (desktopEnv.toLowerCase().includes('kde')) {
+      try {
+        execSync('which qdbus', { stdio: 'ignore' });
+        methods.push('kde-clipboard');
+      } catch (error) {
+        // KDE clipboard not available
+      }
+    }
+
+    if (desktopEnv.toLowerCase().includes('gnome')) {
+      try {
+        execSync('which gdbus', { stdio: 'ignore' });
+        methods.push('gnome-clipboard');
+      } catch (error) {
+        // GNOME clipboard not available
+      }
+    }
+
+    // WSL detection and Windows clipboard integration
+    if (this.isWSL()) {
+      methods.push('wsl-clipboard');
+    }
+
+    return methods.length > 0 ? methods : ['xclip', 'xsel']; // fallback
+  }
+
+  /**
+   * Get Windows clipboard methods
+   */
+  getWindowsMethods() {
+    const methods = [];
+    const { execSync } = require('child_process');
+
+    // PowerShell is preferred
+    try {
+      execSync('powershell -Command "Get-Command Set-Clipboard"', { stdio: 'ignore' });
+      methods.push('powershell-clipboard');
+    } catch (error) {
+      // PowerShell clipboard not available
+    }
+
+    // Traditional clip command
+    try {
+      execSync('where clip', { stdio: 'ignore' });
+      methods.push('clip');
+    } catch (error) {
+      // clip not available
+    }
+
+    return methods.length > 0 ? methods : ['powershell-clipboard', 'clip']; // fallback
+  }
+
+  /**
+   * Detect if running in WSL
+   */
+  isWSL() {
+    try {
+      const fs = require('fs');
+      const release = fs.readFileSync('/proc/version', 'utf8');
+      return release.toLowerCase().includes('microsoft') || release.toLowerCase().includes('wsl');
+    } catch (error) {
+      return false;
     }
   }
 
@@ -49,7 +159,27 @@ class SimpleClipboardManager {
       }
     }
 
-    throw new Error('All clipboard methods failed. Text could not be copied.');
+    // If all methods failed, try to install clipboard tools and retry
+    if (os.platform() === 'linux') {
+      console.log('🔧 Clipboard tools not found. Attempting to install...');
+      const installed = await this.installLinuxClipboardTools();
+
+      if (installed) {
+        // Retry with newly installed tools
+        const newMethods = this.getLinuxMethods();
+        for (const method of newMethods) {
+          try {
+            await this.copyWithFallback(text, method);
+            return { method, success: true };
+          } catch (retryError) {
+            console.warn(`Retry method ${method} failed:`, retryError.message);
+          }
+        }
+      }
+    }
+
+    // Final fallback: provide manual copy instructions
+    return this.handleClipboardFailure(text);
   }
 
   /**
@@ -72,6 +202,59 @@ class SimpleClipboardManager {
         }
       }
 
+      // Handle special clipboard methods
+      if (method === 'wsl-clipboard') {
+        try {
+          // Use Windows clipboard from WSL
+          const command = 'clip.exe';
+          const child = spawn(command, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+          child.stdin.write(text);
+          child.stdin.end();
+
+          child.on('close', (code) => {
+            if (code === 0) {
+              resolve();
+            } else {
+              reject(new Error(`WSL clipboard failed with code ${code}`));
+            }
+          });
+
+          child.on('error', (error) => {
+            reject(new Error(`WSL clipboard error: ${error.message}`));
+          });
+
+          return;
+        } catch (error) {
+          reject(new Error(`WSL clipboard failed: ${error.message}`));
+          return;
+        }
+      }
+
+      if (method === 'kde-clipboard') {
+        try {
+          const command = `qdbus org.kde.klipper /klipper setClipboardContents "${text.replace(/"/g, '\\"')}"`;
+          execSync(command, { stdio: 'pipe', timeout: this.config.timeout });
+          resolve();
+          return;
+        } catch (error) {
+          reject(new Error(`KDE clipboard failed: ${error.message}`));
+          return;
+        }
+      }
+
+      if (method === 'gnome-clipboard') {
+        try {
+          const escapedText = text.replace(/'/g, "'\"'\"'");
+          const command = `gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell --method org.gnome.Shell.Eval "global.display.set_selection('${escapedText}')"`;
+          execSync(command, { stdio: 'pipe', timeout: this.config.timeout });
+          resolve();
+          return;
+        } catch (error) {
+          reject(new Error(`GNOME clipboard failed: ${error.message}`));
+          return;
+        }
+      }
+
       let command;
       let checkCommand;
 
@@ -87,6 +270,14 @@ class SimpleClipboardManager {
         case 'xsel': // Linux alternative
           command = 'xsel --clipboard --input';
           checkCommand = 'which xsel';
+          break;
+        case 'wl-copy': // Wayland
+          command = 'wl-copy';
+          checkCommand = 'which wl-copy';
+          break;
+        case 'termux-clipboard-set': // Termux (Android)
+          command = 'termux-clipboard-set';
+          checkCommand = 'which termux-clipboard-set';
           break;
         case 'clip': // Windows
           command = 'clip';
@@ -186,25 +377,7 @@ class SimpleClipboardManager {
           return macResult.trim();
 
         case 'linux':
-          try {
-            const linuxResult = execSync('xclip -selection clipboard -o', {
-              encoding: 'utf8',
-              stdio: 'pipe',
-              timeout: this.config.timeout
-            });
-            return linuxResult.trim();
-          } catch (xclipError) {
-            try {
-              const xselResult = execSync('xsel --clipboard --output', {
-                encoding: 'utf8',
-                stdio: 'pipe',
-                timeout: this.config.timeout
-              });
-              return xselResult.trim();
-            } catch (xselError) {
-              return '';
-            }
-          }
+          return await this.readLinuxClipboard();
 
         default:
           return '';
@@ -295,16 +468,263 @@ class SimpleClipboardManager {
   }
 
   /**
+   * Read clipboard content on Linux with multiple fallbacks
+   */
+  async readLinuxClipboard() {
+    const methods = [
+      { cmd: 'xclip -selection clipboard -o', name: 'xclip' },
+      { cmd: 'xsel --clipboard --output', name: 'xsel' },
+      { cmd: 'wl-paste', name: 'wl-paste' },
+      { cmd: 'termux-clipboard-get', name: 'termux' }
+    ];
+
+    // Try WSL clipboard first if in WSL
+    if (this.isWSL()) {
+      try {
+        const result = execSync('powershell.exe -Command "Get-Clipboard"', {
+          encoding: 'utf8',
+          stdio: 'pipe',
+          timeout: this.config.timeout
+        });
+        return result.trim();
+      } catch (error) {
+        // WSL clipboard failed, try Linux methods
+      }
+    }
+
+    // Try each Linux clipboard method
+    for (const method of methods) {
+      try {
+        const result = execSync(method.cmd, {
+          encoding: 'utf8',
+          stdio: 'pipe',
+          timeout: this.config.timeout
+        });
+        return result.trim();
+      } catch (error) {
+        continue;
+      }
+    }
+
+    // Try desktop environment specific methods
+    try {
+      const desktopEnv = process.env.XDG_CURRENT_DESKTOP || process.env.DESKTOP_SESSION || '';
+
+      if (desktopEnv.toLowerCase().includes('kde')) {
+        const result = execSync('qdbus org.kde.klipper /klipper getClipboardContents', {
+          encoding: 'utf8',
+          stdio: 'pipe',
+          timeout: this.config.timeout
+        });
+        return result.trim();
+      }
+    } catch (error) {
+      // Desktop environment method failed
+    }
+
+    return '';
+  }
+
+  /**
+   * Install Linux clipboard tools automatically
+   */
+  async installLinuxClipboardTools() {
+    console.log('📦 Installing clipboard tools for Linux...');
+
+    try {
+      const { execSync } = require('child_process');
+
+      // Detect Linux distribution
+      const distro = this.detectLinuxDistro();
+      console.log(`   Detected distribution: ${distro}`);
+
+      switch (distro) {
+        case 'ubuntu':
+        case 'debian':
+        case 'mint':
+        case 'pop':
+        case 'kali':
+          console.log('   Installing via apt...');
+          execSync('sudo apt update && sudo apt install -y xclip xsel', {
+            stdio: 'inherit',
+            timeout: 60000
+          });
+          break;
+
+        case 'fedora':
+        case 'centos':
+        case 'rhel':
+          console.log('   Installing via dnf/yum...');
+          try {
+            execSync('sudo dnf install -y xclip xsel', {
+              stdio: 'inherit',
+              timeout: 60000
+            });
+          } catch {
+            execSync('sudo yum install -y xclip xsel', {
+              stdio: 'inherit',
+              timeout: 60000
+            });
+          }
+          break;
+
+        case 'arch':
+        case 'manjaro':
+          console.log('   Installing via pacman...');
+          execSync('sudo pacman -S --noconfirm xclip xsel', {
+            stdio: 'inherit',
+            timeout: 60000
+          });
+          break;
+
+        case 'opensuse':
+          console.log('   Installing via zypper...');
+          execSync('sudo zypper install -y xclip xsel', {
+            stdio: 'inherit',
+            timeout: 60000
+          });
+          break;
+
+        case 'alpine':
+          console.log('   Installing via apk...');
+          execSync('sudo apk add xclip xsel', {
+            stdio: 'inherit',
+            timeout: 60000
+          });
+          break;
+
+        default:
+          console.log('   ⚠️  Unknown distribution, trying generic installation...');
+          // Try common package managers
+          const managers = [
+            { cmd: 'sudo apt install -y xclip xsel', name: 'apt' },
+            { cmd: 'sudo dnf install -y xclip xsel', name: 'dnf' },
+            { cmd: 'sudo yum install -y xclip xsel', name: 'yum' },
+            { cmd: 'sudo pacman -S --noconfirm xclip xsel', name: 'pacman' }
+          ];
+
+          for (const manager of managers) {
+            try {
+              console.log(`   Trying ${manager.name}...`);
+              execSync(manager.cmd, { stdio: 'inherit', timeout: 60000 });
+              break;
+            } catch (error) {
+              continue;
+            }
+          }
+      }
+
+      // Verify installation
+      try {
+        execSync('which xclip', { stdio: 'ignore' });
+        console.log('✅ Clipboard tools installed successfully!');
+        return true;
+      } catch (error) {
+        try {
+          execSync('which xsel', { stdio: 'ignore' });
+          console.log('✅ Clipboard tools installed successfully!');
+          return true;
+        } catch (error2) {
+          console.log('⚠️  Installation completed but tools not found in PATH');
+          return false;
+        }
+      }
+    } catch (error) {
+      console.log('❌ Failed to install clipboard tools:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Detect Linux distribution
+   */
+  detectLinuxDistro() {
+    try {
+      const fs = require('fs');
+
+      if (fs.existsSync('/etc/os-release')) {
+        const osRelease = fs.readFileSync('/etc/os-release', 'utf8');
+        const idMatch = osRelease.match(/^ID=(.*)$/m);
+        const nameMatch = osRelease.match(/^NAME=(.*)$/m);
+
+        const id = idMatch ? idMatch[1].replace(/"/g, '') : '';
+        const name = nameMatch ? nameMatch[1].replace(/"/g, '') : '';
+
+        if (id === 'ubuntu' || name.includes('Ubuntu')) return 'ubuntu';
+        if (id === 'debian' || name.includes('Debian')) return 'debian';
+        if (id === 'fedora' || name.includes('Fedora')) return 'fedora';
+        if (id === 'centos' || name.includes('CentOS')) return 'centos';
+        if (id === 'rhel' || name.includes('Red Hat')) return 'rhel';
+        if (id === 'arch' || name.includes('Arch')) return 'arch';
+        if (id === 'manjaro' || name.includes('Manjaro')) return 'manjaro';
+        if (id === 'opensuse' || name.includes('openSUSE')) return 'opensuse';
+        if (id === 'alpine' || name.includes('Alpine')) return 'alpine';
+        if (id === 'kali' || name.includes('Kali')) return 'kali';
+        if (id === 'mint' || name.includes('Mint')) return 'mint';
+        if (id === 'pop' || name.includes('Pop!_OS')) return 'pop';
+
+        return id || 'unknown';
+      }
+
+      return 'unknown';
+    } catch (error) {
+      return 'unknown';
+    }
+  }
+
+  /**
+   * Handle clipboard failure with helpful instructions
+   */
+  handleClipboardFailure(text) {
+    console.log('\n❌ Failed to copy to clipboard automatically');
+    console.log('📋 Manual copy options:\n');
+
+    if (os.platform() === 'linux') {
+      console.log('🐧 Linux clipboard setup:');
+      console.log('   Install clipboard tools:');
+      console.log('   • Ubuntu/Debian: sudo apt install xclip xsel');
+      console.log('   • Fedora/CentOS: sudo dnf install xclip xsel');
+      console.log('   • Arch Linux: sudo pacman -S xclip xsel');
+      console.log('');
+      console.log('   Then copy manually:');
+      console.log(`   echo "${text}" | xclip -selection clipboard`);
+      console.log('');
+    }
+
+    console.log('📄 Or copy this text manually:');
+    console.log('─'.repeat(50));
+    console.log(text);
+    console.log('─'.repeat(50));
+
+    return {
+      method: 'manual',
+      success: false,
+      text: text,
+      instructions: 'Manual copy required - see output above'
+    };
+  }
+
+  /**
    * Copy with success notification
    */
   async copyWithNotification(text, description = 'Text') {
     try {
       const result = await this.copy(text);
-      return {
-        ...result,
-        message: `${description} copied to clipboard successfully using ${result.method}`,
-        length: text.length
-      };
+
+      if (result.success) {
+        return {
+          ...result,
+          message: `${description} copied to clipboard successfully using ${result.method}`,
+          length: text.length
+        };
+      } else {
+        // Manual copy case
+        return {
+          ...result,
+          message: `${description} ready for manual copy`,
+          length: text.length
+        };
+      }
     } catch (error) {
       throw new Error(`Failed to copy ${description.toLowerCase()}: ${error.message}`);
     }

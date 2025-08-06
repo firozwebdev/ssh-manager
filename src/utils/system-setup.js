@@ -6,9 +6,103 @@ const os = require('os');
 class SystemSetup {
   constructor() {
     this.platform = os.platform();
+    this.arch = os.arch();
     this.isWindows = this.platform === 'win32';
     this.isMacOS = this.platform === 'darwin';
     this.isLinux = this.platform === 'linux';
+    this.isWSL = this.detectWSL();
+    this.distro = this.isLinux ? this.detectLinuxDistro() : null;
+    this.packageManager = this.detectPackageManager();
+
+    // Display platform info
+    this.displayPlatformInfo();
+  }
+
+  /**
+   * Detect if running in Windows Subsystem for Linux
+   */
+  detectWSL() {
+    if (!this.isLinux) return false;
+
+    try {
+      const release = fs.readFileSync('/proc/version', 'utf8');
+      return release.toLowerCase().includes('microsoft') || release.toLowerCase().includes('wsl');
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Display detected platform information
+   */
+  displayPlatformInfo() {
+    console.log('🖥️  Platform Detection:');
+
+    if (this.isWindows) {
+      console.log('   🪟 Windows detected');
+    } else if (this.isMacOS) {
+      console.log('   🍎 macOS detected');
+    } else if (this.isLinux) {
+      if (this.isWSL) {
+        console.log('   🐧 Linux (WSL) detected');
+      } else {
+        console.log('   🐧 Linux detected');
+      }
+      if (this.distro) {
+        console.log(`   📦 Distribution: ${this.distro}`);
+      }
+    }
+
+    console.log(`   🏗️  Architecture: ${this.arch}`);
+    if (this.packageManager) {
+      console.log(`   📦 Package Manager: ${this.packageManager}`);
+    }
+    console.log('');
+  }
+
+  /**
+   * Detect available package manager
+   */
+  detectPackageManager() {
+    if (this.isWindows) {
+      // Check for Windows package managers
+      const managers = ['winget', 'choco', 'scoop'];
+      for (const manager of managers) {
+        try {
+          execSync(`${manager} --version`, { stdio: 'ignore' });
+          return manager;
+        } catch (error) {
+          continue;
+        }
+      }
+      return null;
+    } else if (this.isMacOS) {
+      // Check for macOS package managers
+      const managers = ['brew', 'port'];
+      for (const manager of managers) {
+        try {
+          execSync(`which ${manager}`, { stdio: 'ignore' });
+          return manager;
+        } catch (error) {
+          continue;
+        }
+      }
+      return null;
+    } else if (this.isLinux) {
+      // Check for Linux package managers
+      const managers = ['apt', 'dnf', 'yum', 'pacman', 'zypper', 'apk'];
+      for (const manager of managers) {
+        try {
+          execSync(`which ${manager}`, { stdio: 'ignore' });
+          return manager;
+        } catch (error) {
+          continue;
+        }
+      }
+      return null;
+    }
+
+    return null;
   }
 
   /**
@@ -292,68 +386,251 @@ class SystemSetup {
   }
 
   /**
-   * Install OpenSSH on Linux
+   * Install OpenSSH on Linux with enhanced distribution support
    */
   async installOpenSSHLinux() {
     console.log('🐧 Installing OpenSSH on Linux...');
 
-    // Detect Linux distribution
-    const distro = this.detectLinuxDistro();
-    console.log(`   Detected distribution: ${distro}`);
+    if (this.isWSL) {
+      console.log('   🔍 WSL detected - using Linux package managers');
+    }
+
+    console.log(`   📦 Distribution: ${this.distro}`);
+    console.log(`   🛠️  Package Manager: ${this.packageManager}`);
+
+    // Check if already installed
+    if (this.checkSSHKeygen()) {
+      console.log('✅ OpenSSH is already installed!');
+      return true;
+    }
 
     try {
-      switch (distro) {
-        case 'ubuntu':
-        case 'debian':
-          console.log('   Installing via apt...');
-          execSync('sudo apt update && sudo apt install -y openssh-client', { stdio: 'inherit' });
+      // Try package manager-specific installation
+      switch (this.packageManager) {
+        case 'apt':
+          await this.installWithApt();
           break;
-          
-        case 'centos':
-        case 'rhel':
-        case 'fedora':
-          console.log('   Installing via yum/dnf...');
-          try {
-            execSync('sudo dnf install -y openssh-clients', { stdio: 'inherit' });
-          } catch {
-            execSync('sudo yum install -y openssh-clients', { stdio: 'inherit' });
-          }
+        case 'dnf':
+          await this.installWithDnf();
           break;
-          
-        case 'arch':
-          console.log('   Installing via pacman...');
-          execSync('sudo pacman -S --noconfirm openssh', { stdio: 'inherit' });
+        case 'yum':
+          await this.installWithYum();
           break;
-          
+        case 'pacman':
+          await this.installWithPacman();
+          break;
+        case 'zypper':
+          await this.installWithZypper();
+          break;
+        case 'apk':
+          await this.installWithApk();
+          break;
         default:
-          throw new Error(`Unsupported Linux distribution: ${distro}`);
+          // Fallback to distribution-based installation
+          await this.installByDistribution();
       }
 
+      // Verify installation
       if (this.checkSSHKeygen()) {
         console.log('✅ OpenSSH installed successfully!');
         return true;
+      } else {
+        console.log('⚠️  Installation completed but ssh-keygen not found');
+        return false;
       }
     } catch (error) {
-      console.log('   Package manager installation failed');
+      console.log('   Package manager installation failed:', error.message);
+
+      // Try alternative installation methods
+      return await this.tryAlternativeLinuxInstallation();
+    }
+  }
+
+  /**
+   * Install OpenSSH using apt (Debian/Ubuntu)
+   */
+  async installWithApt() {
+    console.log('   📦 Installing via apt...');
+    execSync('sudo apt update', { stdio: 'inherit' });
+    execSync('sudo apt install -y openssh-client openssh-server', { stdio: 'inherit' });
+  }
+
+  /**
+   * Install OpenSSH using dnf (Fedora/RHEL 8+)
+   */
+  async installWithDnf() {
+    console.log('   📦 Installing via dnf...');
+    execSync('sudo dnf install -y openssh-clients openssh-server', { stdio: 'inherit' });
+  }
+
+  /**
+   * Install OpenSSH using yum (CentOS/RHEL 7)
+   */
+  async installWithYum() {
+    console.log('   📦 Installing via yum...');
+    execSync('sudo yum install -y openssh-clients openssh-server', { stdio: 'inherit' });
+  }
+
+  /**
+   * Install OpenSSH using pacman (Arch Linux)
+   */
+  async installWithPacman() {
+    console.log('   📦 Installing via pacman...');
+    execSync('sudo pacman -Sy --noconfirm openssh', { stdio: 'inherit' });
+  }
+
+  /**
+   * Install OpenSSH using zypper (openSUSE)
+   */
+  async installWithZypper() {
+    console.log('   📦 Installing via zypper...');
+    execSync('sudo zypper install -y openssh', { stdio: 'inherit' });
+  }
+
+  /**
+   * Install OpenSSH using apk (Alpine Linux)
+   */
+  async installWithApk() {
+    console.log('   📦 Installing via apk...');
+    execSync('sudo apk add openssh-client openssh-server', { stdio: 'inherit' });
+  }
+
+  /**
+   * Fallback installation by distribution
+   */
+  async installByDistribution() {
+    console.log('   🔄 Trying distribution-specific installation...');
+
+    switch (this.distro) {
+      case 'ubuntu':
+      case 'debian':
+      case 'mint':
+      case 'pop':
+      case 'kali':
+        execSync('sudo apt update && sudo apt install -y openssh-client openssh-server', { stdio: 'inherit' });
+        break;
+
+      case 'fedora':
+      case 'centos':
+      case 'rhel':
+        try {
+          execSync('sudo dnf install -y openssh-clients openssh-server', { stdio: 'inherit' });
+        } catch {
+          execSync('sudo yum install -y openssh-clients openssh-server', { stdio: 'inherit' });
+        }
+        break;
+
+      case 'arch':
+      case 'manjaro':
+        execSync('sudo pacman -Sy --noconfirm openssh', { stdio: 'inherit' });
+        break;
+
+      case 'opensuse':
+        execSync('sudo zypper install -y openssh', { stdio: 'inherit' });
+        break;
+
+      case 'alpine':
+        execSync('sudo apk add openssh-client openssh-server', { stdio: 'inherit' });
+        break;
+
+      default:
+        throw new Error(`Unsupported Linux distribution: ${this.distro}`);
+    }
+  }
+
+  /**
+   * Try alternative installation methods for Linux
+   */
+  async tryAlternativeLinuxInstallation() {
+    console.log('   🔄 Trying alternative installation methods...');
+
+    // Try snap if available
+    try {
+      execSync('which snap', { stdio: 'ignore' });
+      console.log('   📦 Trying snap installation...');
+      execSync('sudo snap install openssh', { stdio: 'inherit' });
+
+      if (this.checkSSHKeygen()) {
+        console.log('✅ OpenSSH installed via snap!');
+        return true;
+      }
+    } catch (error) {
+      console.log('   Snap installation failed');
+    }
+
+    // Try flatpak if available
+    try {
+      execSync('which flatpak', { stdio: 'ignore' });
+      console.log('   📦 Trying flatpak installation...');
+      // Note: OpenSSH typically isn't available via flatpak, but we try anyway
+      console.log('   ⚠️  OpenSSH not typically available via flatpak');
+    } catch (error) {
+      // Flatpak not available
     }
 
     return false;
   }
 
   /**
-   * Detect Linux distribution
+   * Detect Linux distribution with enhanced detection
    */
   detectLinuxDistro() {
+    if (!this.isLinux) return null;
+
     try {
-      const osRelease = fs.readFileSync('/etc/os-release', 'utf8');
-      
-      if (osRelease.includes('Ubuntu')) return 'ubuntu';
-      if (osRelease.includes('Debian')) return 'debian';
-      if (osRelease.includes('CentOS')) return 'centos';
-      if (osRelease.includes('Red Hat')) return 'rhel';
-      if (osRelease.includes('Fedora')) return 'fedora';
-      if (osRelease.includes('Arch')) return 'arch';
-      
+      // Try /etc/os-release first (most reliable)
+      if (fs.existsSync('/etc/os-release')) {
+        const osRelease = fs.readFileSync('/etc/os-release', 'utf8');
+
+        // Extract ID and ID_LIKE fields
+        const idMatch = osRelease.match(/^ID=(.*)$/m);
+        const idLikeMatch = osRelease.match(/^ID_LIKE=(.*)$/m);
+        const nameMatch = osRelease.match(/^NAME=(.*)$/m);
+
+        const id = idMatch ? idMatch[1].replace(/"/g, '') : '';
+        const idLike = idLikeMatch ? idLikeMatch[1].replace(/"/g, '') : '';
+        const name = nameMatch ? nameMatch[1].replace(/"/g, '') : '';
+
+        // Specific distributions
+        if (id === 'ubuntu' || name.includes('Ubuntu')) return 'ubuntu';
+        if (id === 'debian' || name.includes('Debian')) return 'debian';
+        if (id === 'fedora' || name.includes('Fedora')) return 'fedora';
+        if (id === 'centos' || name.includes('CentOS')) return 'centos';
+        if (id === 'rhel' || name.includes('Red Hat')) return 'rhel';
+        if (id === 'arch' || name.includes('Arch')) return 'arch';
+        if (id === 'manjaro' || name.includes('Manjaro')) return 'manjaro';
+        if (id === 'opensuse' || name.includes('openSUSE')) return 'opensuse';
+        if (id === 'alpine' || name.includes('Alpine')) return 'alpine';
+        if (id === 'kali' || name.includes('Kali')) return 'kali';
+        if (id === 'mint' || name.includes('Mint')) return 'mint';
+        if (id === 'pop' || name.includes('Pop!_OS')) return 'pop';
+
+        // Check ID_LIKE for family detection
+        if (idLike.includes('debian')) return 'debian';
+        if (idLike.includes('ubuntu')) return 'ubuntu';
+        if (idLike.includes('fedora')) return 'fedora';
+        if (idLike.includes('rhel')) return 'rhel';
+        if (idLike.includes('arch')) return 'arch';
+
+        return id || 'unknown';
+      }
+
+      // Fallback methods
+      const fallbackChecks = [
+        { file: '/etc/debian_version', distro: 'debian' },
+        { file: '/etc/redhat-release', distro: 'rhel' },
+        { file: '/etc/fedora-release', distro: 'fedora' },
+        { file: '/etc/arch-release', distro: 'arch' },
+        { file: '/etc/alpine-release', distro: 'alpine' },
+        { file: '/etc/SuSE-release', distro: 'opensuse' }
+      ];
+
+      for (const check of fallbackChecks) {
+        if (fs.existsSync(check.file)) {
+          return check.distro;
+        }
+      }
+
       return 'unknown';
     } catch (error) {
       return 'unknown';

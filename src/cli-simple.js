@@ -91,8 +91,15 @@ program
           publicKey,
           "SSH public key"
         );
-        log.success(clipResult.message);
-        log.dim(`Key length: ${clipResult.length} characters`);
+
+        if (clipResult.success) {
+          log.success(clipResult.message);
+          log.dim(`Key length: ${clipResult.length} characters`);
+        } else {
+          // Manual copy case
+          log.warning("Automatic clipboard copy not available");
+          log.dim(clipResult.instructions);
+        }
       } catch (clipError) {
         log.warning(
           "Clipboard copy failed, but key was generated successfully"
@@ -155,11 +162,20 @@ program
           "SSH public key"
         );
 
-        log.success("Public key copied to clipboard");
-        log.info(
-          `Key: ${selectedKey.name} (${selectedKey.type.toUpperCase()})`
-        );
-        log.dim(`Length: ${clipResult.length} characters`);
+        if (clipResult.success) {
+          log.success("Public key copied to clipboard");
+          log.info(
+            `Key: ${selectedKey.name} (${selectedKey.type.toUpperCase()})`
+          );
+          log.dim(`Length: ${clipResult.length} characters`);
+        } else {
+          // Manual copy case
+          log.warning("Automatic clipboard copy not available");
+          log.info(
+            `Key: ${selectedKey.name} (${selectedKey.type.toUpperCase()})`
+          );
+          log.dim(clipResult.instructions);
+        }
       } catch (clipError) {
         log.error("Failed to copy key to clipboard");
         log.dim("Manual copy from: " + selectedKey.publicKeyPath);
