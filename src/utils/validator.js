@@ -230,21 +230,32 @@ class Validator {
       errors.push('Invalid SSH public key format');
     }
     
-    // Check length
-    if (trimmedKey.length < 100) {
-      errors.push('SSH public key appears to be too short');
-    }
-    
-    if (trimmedKey.length > 8192) {
-      errors.push('SSH public key appears to be too long');
-    }
-    
-    // Extract key type
+    // Extract key type first
     let keyType = 'unknown';
     if (trimmedKey.startsWith('ssh-rsa')) keyType = 'rsa';
     else if (trimmedKey.startsWith('ssh-ed25519')) keyType = 'ed25519';
     else if (trimmedKey.startsWith('ecdsa-sha2-')) keyType = 'ecdsa';
     else if (trimmedKey.startsWith('ssh-dss')) keyType = 'dsa';
+
+    // Check length based on key type
+    const minLengths = {
+      'rsa': 200,      // RSA keys are longer
+      'ed25519': 80,   // ED25519 keys are shorter
+      'ecdsa': 100,    // ECDSA keys vary
+      'dsa': 200,      // DSA keys are longer
+      'unknown': 50    // Conservative minimum for unknown types
+    };
+
+    const maxLength = 8192;
+    const minLength = minLengths[keyType] || minLengths['unknown'];
+
+    if (trimmedKey.length < minLength) {
+      errors.push(`SSH public key appears to be too short for ${keyType.toUpperCase()} (minimum ${minLength} characters)`);
+    }
+
+    if (trimmedKey.length > maxLength) {
+      errors.push('SSH public key appears to be too long');
+    }
     
     return {
       valid: errors.length === 0,
