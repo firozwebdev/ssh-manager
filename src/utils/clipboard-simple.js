@@ -17,14 +17,14 @@ class SimpleClipboardManager {
     const platform = os.platform();
 
     switch (platform) {
-      case 'darwin': // macOS
-        return this.getMacOSMethods();
-      case 'linux':
-        return this.getLinuxMethods();
-      case 'win32': // Windows
-        return this.getWindowsMethods();
-      default:
-        return [];
+    case 'darwin': // macOS
+      return this.getMacOSMethods();
+    case 'linux':
+      return this.getLinuxMethods();
+    case 'win32': // Windows
+      return this.getWindowsMethods();
+    default:
+      return [];
     }
   }
 
@@ -216,7 +216,7 @@ class SimpleClipboardManager {
       if (method === 'powershell-clipboard') {
         try {
           // Use PowerShell Set-Clipboard cmdlet
-          const escapedText = text.replace(/'/g, "''"); // Escape single quotes
+          const escapedText = text.replace(/'/g, '\'\''); // Escape single quotes
           const command = `powershell -Command "Set-Clipboard -Value '${escapedText}'"`;
           execSync(command, { stdio: 'pipe', timeout: this.config.timeout });
           resolve();
@@ -269,7 +269,7 @@ class SimpleClipboardManager {
 
       if (method === 'gnome-clipboard') {
         try {
-          const escapedText = text.replace(/'/g, "'\"'\"'");
+          const escapedText = text.replace(/'/g, '\'"\'"\'');
           const command = `gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell --method org.gnome.Shell.Eval "global.display.set_selection('${escapedText}')"`;
           execSync(command, { stdio: 'pipe', timeout: this.config.timeout });
           resolve();
@@ -284,33 +284,33 @@ class SimpleClipboardManager {
       let checkCommand;
 
       switch (method) {
-        case 'pbcopy': // macOS
-          command = 'pbcopy';
-          checkCommand = 'which pbcopy';
-          break;
-        case 'xclip': // Linux
-          command = 'xclip -selection clipboard';
-          checkCommand = 'which xclip';
-          break;
-        case 'xsel': // Linux alternative
-          command = 'xsel --clipboard --input';
-          checkCommand = 'which xsel';
-          break;
-        case 'wl-copy': // Wayland
-          command = 'wl-copy';
-          checkCommand = 'which wl-copy';
-          break;
-        case 'termux-clipboard-set': // Termux (Android)
-          command = 'termux-clipboard-set';
-          checkCommand = 'which termux-clipboard-set';
-          break;
-        case 'clip': // Windows
-          command = 'clip';
-          checkCommand = 'where clip';
-          break;
-        default:
-          reject(new Error(`Unknown fallback method: ${method}`));
-          return;
+      case 'pbcopy': // macOS
+        command = 'pbcopy';
+        checkCommand = 'which pbcopy';
+        break;
+      case 'xclip': // Linux
+        command = 'xclip -selection clipboard';
+        checkCommand = 'which xclip';
+        break;
+      case 'xsel': // Linux alternative
+        command = 'xsel --clipboard --input';
+        checkCommand = 'which xsel';
+        break;
+      case 'wl-copy': // Wayland
+        command = 'wl-copy';
+        checkCommand = 'which wl-copy';
+        break;
+      case 'termux-clipboard-set': // Termux (Android)
+        command = 'termux-clipboard-set';
+        checkCommand = 'which termux-clipboard-set';
+        break;
+      case 'clip': // Windows
+        command = 'clip';
+        checkCommand = 'where clip';
+        break;
+      default:
+        reject(new Error(`Unknown fallback method: ${method}`));
+        return;
       }
 
       try {
@@ -379,33 +379,33 @@ class SimpleClipboardManager {
 
     try {
       switch (platform) {
-        case 'win32':
-          // Try PowerShell first
-          try {
-            const result = execSync('powershell -Command "Get-Clipboard"', {
-              encoding: 'utf8',
-              stdio: 'pipe',
-              timeout: this.config.timeout
-            });
-            return result.trim();
-          } catch (psError) {
-            // Fallback: Windows doesn't have a simple command-line clipboard read
-            return '';
-          }
-
-        case 'darwin':
-          const macResult = execSync('pbpaste', {
+      case 'win32':
+        // Try PowerShell first
+        try {
+          const result = execSync('powershell -Command "Get-Clipboard"', {
             encoding: 'utf8',
             stdio: 'pipe',
             timeout: this.config.timeout
           });
-          return macResult.trim();
-
-        case 'linux':
-          return await this.readLinuxClipboard();
-
-        default:
+          return result.trim();
+        } catch (psError) {
+          // Fallback: Windows doesn't have a simple command-line clipboard read
           return '';
+        }
+
+      case 'darwin':
+        const macResult = execSync('pbpaste', {
+          encoding: 'utf8',
+          stdio: 'pipe',
+          timeout: this.config.timeout
+        });
+        return macResult.trim();
+
+      case 'linux':
+        return await this.readLinuxClipboard();
+
+      default:
+        return '';
       }
     } catch (error) {
       return '';
@@ -610,95 +610,128 @@ class SimpleClipboardManager {
       // Detect Linux distribution
       const distro = this.detectLinuxDistro();
 
-      console.log('🔧 Installing clipboard tools...');
+      console.log('🔧 Installing clipboard tools automatically...');
+      console.log('   📋 This will install xclip and xsel for clipboard functionality');
+      console.log('   🔐 You may be prompted for your sudo password');
+      console.log('');
 
-      // Try to install with user interaction for sudo
+      // Try to install with full user interaction for sudo
       switch (distro) {
-        case 'ubuntu':
-        case 'debian':
-        case 'mint':
-        case 'pop':
-        case 'kali':
+      case 'ubuntu':
+      case 'debian':
+      case 'mint':
+      case 'pop':
+      case 'kali':
+        try {
+          console.log('   📦 Installing xclip and xsel directly...');
+          // Skip apt update and install directly (more reliable with broken repos)
+          execSync('sudo apt install -y xclip xsel', {
+            stdio: 'inherit',  // Full interaction for sudo
+            timeout: 60000
+          });
+        } catch (error) {
+          // Try alternative installation methods for broken repositories
+          console.log('   🔄 Trying with repository fixes...');
           try {
-            console.log('   Updating package list...');
-            execSync('sudo apt update -qq', {
-              stdio: ['inherit', 'pipe', 'pipe'],
+            // Try fixing repository issues and installing
+            execSync('sudo apt update --fix-missing 2>/dev/null || true', {
+              stdio: 'inherit',
               timeout: 60000
             });
-            console.log('   Installing xclip and xsel...');
             execSync('sudo apt install -y xclip xsel', {
-              stdio: ['inherit', 'pipe', 'pipe'],
+              stdio: 'inherit',
               timeout: 60000
             });
-          } catch (error) {
-            // Try without quiet flags if needed
-            console.log('   Retrying installation...');
-            execSync('sudo apt update && sudo apt install -y xclip xsel', {
-              stdio: ['inherit', 'pipe', 'pipe'],
-              timeout: 60000
-            });
-          }
-          break;
-
-        case 'fedora':
-        case 'centos':
-        case 'rhel':
-          console.log('   Installing via dnf/yum...');
-          try {
-            execSync('sudo dnf install -y xclip xsel', {
-              stdio: ['inherit', 'pipe', 'pipe'],
-              timeout: 60000
-            });
-          } catch {
-            execSync('sudo yum install -y xclip xsel', {
-              stdio: ['inherit', 'pipe', 'pipe'],
-              timeout: 60000
-            });
-          }
-          break;
-
-        case 'arch':
-        case 'manjaro':
-          console.log('   Installing via pacman...');
-          execSync('sudo pacman -S --noconfirm xclip xsel', {
-            stdio: ['inherit', 'pipe', 'pipe'],
-            timeout: 60000
-          });
-          break;
-
-        case 'opensuse':
-          console.log('   Installing via zypper...');
-          execSync('sudo zypper install -y xclip xsel', {
-            stdio: ['inherit', 'pipe', 'pipe'],
-            timeout: 60000
-          });
-          break;
-
-        case 'alpine':
-          console.log('   Installing via apk...');
-          execSync('sudo apk add xclip xsel', {
-            stdio: ['inherit', 'pipe', 'pipe'],
-            timeout: 60000
-          });
-          break;
-
-        default:
-          // Try common package managers quietly
-          const managers = [
-            'sudo apt update -qq && sudo apt install -y -qq xclip xsel',
-            'sudo dnf install -y -q xclip xsel',
-            'sudo yum install -y -q xclip xsel',
-            'sudo pacman -S --noconfirm --quiet xclip xsel'
-          ];
-
-          for (const cmd of managers) {
+          } catch (error2) {
+            // Try with non-interactive mode
             try {
-              execSync(cmd, { stdio: 'pipe', timeout: 60000 });
-              break;
-            } catch (error) {
-              continue;
+              console.log('   🔄 Trying non-interactive installation...');
+              execSync('sudo DEBIAN_FRONTEND=noninteractive apt install -y xclip xsel', {
+                stdio: 'inherit',
+                timeout: 60000
+              });
+            } catch (error3) {
+              // Try installing from main repository only
+              try {
+                console.log('   🔄 Trying main repository installation...');
+                execSync('sudo apt install -y --no-install-recommends xclip xsel', {
+                  stdio: 'inherit',
+                  timeout: 60000
+                });
+              } catch (error4) {
+                // Final fallback - try individual packages
+                try {
+                  console.log('   🔄 Trying individual package installation...');
+                  execSync('sudo apt install -y xclip || true', { stdio: 'inherit', timeout: 30000 });
+                  execSync('sudo apt install -y xsel || true', { stdio: 'inherit', timeout: 30000 });
+                } catch (error5) {
+                  throw error; // Re-throw original error
+                }
+              }
             }
           }
+        }
+        break;
+
+      case 'fedora':
+      case 'centos':
+      case 'rhel':
+        console.log('   📦 Installing via dnf/yum...');
+        try {
+          execSync('sudo dnf install -y xclip xsel', {
+            stdio: 'inherit',  // Full interaction for sudo
+            timeout: 60000
+          });
+        } catch {
+          execSync('sudo yum install -y xclip xsel', {
+            stdio: 'inherit',  // Full interaction for sudo
+            timeout: 60000
+          });
+        }
+        break;
+
+      case 'arch':
+      case 'manjaro':
+        console.log('   📦 Installing via pacman...');
+        execSync('sudo pacman -S --noconfirm xclip xsel', {
+          stdio: 'inherit',  // Full interaction for sudo
+          timeout: 60000
+        });
+        break;
+
+      case 'opensuse':
+        console.log('   Installing via zypper...');
+        execSync('sudo zypper install -y xclip xsel', {
+          stdio: ['inherit', 'pipe', 'pipe'],
+          timeout: 60000
+        });
+        break;
+
+      case 'alpine':
+        console.log('   Installing via apk...');
+        execSync('sudo apk add xclip xsel', {
+          stdio: ['inherit', 'pipe', 'pipe'],
+          timeout: 60000
+        });
+        break;
+
+      default:
+        // Try common package managers quietly
+        const managers = [
+          'sudo apt update -qq && sudo apt install -y -qq xclip xsel',
+          'sudo dnf install -y -q xclip xsel',
+          'sudo yum install -y -q xclip xsel',
+          'sudo pacman -S --noconfirm --quiet xclip xsel'
+        ];
+
+        for (const cmd of managers) {
+          try {
+            execSync(cmd, { stdio: 'pipe', timeout: 60000 });
+            break;
+          } catch (error) {
+            continue;
+          }
+        }
       }
 
       // Verify installation by actually testing the tools
@@ -736,79 +769,79 @@ class SimpleClipboardManager {
       console.log(`   Detected distribution: ${distro}`);
 
       switch (distro) {
-        case 'ubuntu':
-        case 'debian':
-        case 'mint':
-        case 'pop':
-        case 'kali':
-          console.log('   Installing via apt...');
-          execSync('sudo apt update && sudo apt install -y xclip xsel', {
+      case 'ubuntu':
+      case 'debian':
+      case 'mint':
+      case 'pop':
+      case 'kali':
+        console.log('   Installing via apt...');
+        execSync('sudo apt update && sudo apt install -y xclip xsel', {
+          stdio: 'inherit',
+          timeout: 60000
+        });
+        break;
+
+      case 'fedora':
+      case 'centos':
+      case 'rhel':
+        console.log('   Installing via dnf/yum...');
+        try {
+          execSync('sudo dnf install -y xclip xsel', {
             stdio: 'inherit',
             timeout: 60000
           });
-          break;
+        } catch {
+          execSync('sudo yum install -y xclip xsel', {
+            stdio: 'inherit',
+            timeout: 60000
+          });
+        }
+        break;
 
-        case 'fedora':
-        case 'centos':
-        case 'rhel':
-          console.log('   Installing via dnf/yum...');
+      case 'arch':
+      case 'manjaro':
+        console.log('   Installing via pacman...');
+        execSync('sudo pacman -S --noconfirm xclip xsel', {
+          stdio: 'inherit',
+          timeout: 60000
+        });
+        break;
+
+      case 'opensuse':
+        console.log('   Installing via zypper...');
+        execSync('sudo zypper install -y xclip xsel', {
+          stdio: 'inherit',
+          timeout: 60000
+        });
+        break;
+
+      case 'alpine':
+        console.log('   Installing via apk...');
+        execSync('sudo apk add xclip xsel', {
+          stdio: 'inherit',
+          timeout: 60000
+        });
+        break;
+
+      default:
+        console.log('   ⚠️  Unknown distribution, trying generic installation...');
+        // Try common package managers
+        const managers = [
+          { cmd: 'sudo apt install -y xclip xsel', name: 'apt' },
+          { cmd: 'sudo dnf install -y xclip xsel', name: 'dnf' },
+          { cmd: 'sudo yum install -y xclip xsel', name: 'yum' },
+          { cmd: 'sudo pacman -S --noconfirm xclip xsel', name: 'pacman' }
+        ];
+
+        for (const manager of managers) {
           try {
-            execSync('sudo dnf install -y xclip xsel', {
-              stdio: 'inherit',
-              timeout: 60000
-            });
-          } catch {
-            execSync('sudo yum install -y xclip xsel', {
-              stdio: 'inherit',
-              timeout: 60000
-            });
+            console.log(`   Trying ${manager.name}...`);
+            execSync(manager.cmd, { stdio: 'inherit', timeout: 60000 });
+            break;
+          } catch (error) {
+            continue;
           }
-          break;
-
-        case 'arch':
-        case 'manjaro':
-          console.log('   Installing via pacman...');
-          execSync('sudo pacman -S --noconfirm xclip xsel', {
-            stdio: 'inherit',
-            timeout: 60000
-          });
-          break;
-
-        case 'opensuse':
-          console.log('   Installing via zypper...');
-          execSync('sudo zypper install -y xclip xsel', {
-            stdio: 'inherit',
-            timeout: 60000
-          });
-          break;
-
-        case 'alpine':
-          console.log('   Installing via apk...');
-          execSync('sudo apk add xclip xsel', {
-            stdio: 'inherit',
-            timeout: 60000
-          });
-          break;
-
-        default:
-          console.log('   ⚠️  Unknown distribution, trying generic installation...');
-          // Try common package managers
-          const managers = [
-            { cmd: 'sudo apt install -y xclip xsel', name: 'apt' },
-            { cmd: 'sudo dnf install -y xclip xsel', name: 'dnf' },
-            { cmd: 'sudo yum install -y xclip xsel', name: 'yum' },
-            { cmd: 'sudo pacman -S --noconfirm xclip xsel', name: 'pacman' }
-          ];
-
-          for (const manager of managers) {
-            try {
-              console.log(`   Trying ${manager.name}...`);
-              execSync(manager.cmd, { stdio: 'inherit', timeout: 60000 });
-              break;
-            } catch (error) {
-              continue;
-            }
-          }
+        }
       }
 
       // Verify installation
