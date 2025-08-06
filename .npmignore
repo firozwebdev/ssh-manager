@@ -1,0 +1,89 @@
+# Development files
+.git/
+.github/
+.vscode/
+.idea/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test files
+test/
+tests/
+*.test.js
+*.spec.js
+coverage/
+.nyc_output/
+
+# Development dependencies
+node_modules/
+.npm/
+.yarn/
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+*.swp
+*.swo
+*~
+
+# Build artifacts
+dist/
+build/
+out/
+
+# Documentation source
+docs/
+*.md.backup
+
+# Development scripts
+scripts/dev/
+scripts/build/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Local configuration
+config/local.json
+config/development.json
+
+# SSH keys (for safety)
+*.pem
+*.key
+id_*
+*.pub
+
+# Backup files
+*.backup
+*.bak
+
+# Editor files
+.vimrc
+.editorconfig
+
+# Package manager files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Development tools
+.eslintcache
+.stylelintcache
