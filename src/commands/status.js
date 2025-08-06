@@ -136,11 +136,18 @@ class StatusCommand {
     // Check ssh-keygen availability
     try {
       const { execSync } = require("child_process");
-      execSync("ssh-keygen -h", { stdio: "ignore" });
+      execSync("ssh-keygen -?", { stdio: "pipe" });
       console.log(chalk.green("✓"), "ssh-keygen available");
     } catch (error) {
-      console.log(chalk.red("✗"), "ssh-keygen not found");
-      console.log(chalk.dim("  Install OpenSSH to use this tool"));
+      // ssh-keygen -? returns non-zero but shows usage if available
+      if (error.stderr && error.stderr.includes('usage: ssh-keygen')) {
+        console.log(chalk.green("✓"), "ssh-keygen available");
+      } else if (error.stdout && error.stdout.includes('usage: ssh-keygen')) {
+        console.log(chalk.green("✓"), "ssh-keygen available");
+      } else {
+        console.log(chalk.red("✗"), "ssh-keygen not found");
+        console.log(chalk.dim("  Install OpenSSH to use this tool"));
+      }
     }
 
     // Platform info

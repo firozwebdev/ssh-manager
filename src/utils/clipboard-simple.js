@@ -15,14 +15,14 @@ class SimpleClipboardManager {
    */
   getFallbackMethods() {
     const platform = os.platform();
-    
+
     switch (platform) {
       case 'darwin': // macOS
         return ['pbcopy'];
       case 'linux':
         return ['xclip', 'xsel'];
       case 'win32': // Windows
-        return ['clip'];
+        return ['powershell-clipboard', 'clip'];
       default:
         return [];
     }
@@ -36,8 +36,11 @@ class SimpleClipboardManager {
       throw new Error('Invalid text provided for clipboard copy');
     }
 
+    // Get current platform methods
+    const methods = this.getFallbackMethods();
+
     // Try fallback methods
-    for (const method of this.config.fallbackMethods) {
+    for (const method of methods) {
       try {
         await this.copyWithFallback(text, method);
         return { method, success: true };
@@ -45,7 +48,7 @@ class SimpleClipboardManager {
         console.warn(`Fallback method ${method} failed:`, fallbackError.message);
       }
     }
-    
+
     throw new Error('All clipboard methods failed. Text could not be copied.');
   }
 
@@ -54,20 +57,40 @@ class SimpleClipboardManager {
    */
   async copyWithFallback(text, method) {
     return new Promise((resolve, reject) => {
+      // Handle PowerShell clipboard method for Windows
+      if (method === 'powershell-clipboard') {
+        try {
+          // Use PowerShell Set-Clipboard cmdlet
+          const escapedText = text.replace(/'/g, "''"); // Escape single quotes
+          const command = `powershell -Command "Set-Clipboard -Value '${escapedText}'"`;
+          execSync(command, { stdio: 'pipe', timeout: this.config.timeout });
+          resolve();
+          return;
+        } catch (error) {
+          reject(new Error(`PowerShell clipboard failed: ${error.message}`));
+          return;
+        }
+      }
+
       let command;
-      
+      let checkCommand;
+
       switch (method) {
         case 'pbcopy': // macOS
           command = 'pbcopy';
+          checkCommand = 'which pbcopy';
           break;
         case 'xclip': // Linux
           command = 'xclip -selection clipboard';
+          checkCommand = 'which xclip';
           break;
         case 'xsel': // Linux alternative
           command = 'xsel --clipboard --input';
+          checkCommand = 'which xsel';
           break;
         case 'clip': // Windows
           command = 'clip';
+          checkCommand = 'where clip';
           break;
         default:
           reject(new Error(`Unknown fallback method: ${method}`));
@@ -76,28 +99,33 @@ class SimpleClipboardManager {
 
       try {
         // Check if command exists
-        execSync(`where ${method}`, { stdio: 'ignore' });
+        execSync(checkCommand, { stdio: 'ignore' });
       } catch (error) {
         reject(new Error(`Command not found: ${method}`));
         return;
       }
 
-      const child = spawn(command, [], { 
+      const child = spawn(command, [], {
         shell: true,
         stdio: ['pipe', 'pipe', 'pipe']
       });
 
       let stderr = '';
-      
+      let stdout = '';
+
       child.stderr.on('data', (data) => {
         stderr += data.toString();
+      });
+
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
       });
 
       child.on('close', (code) => {
         if (code === 0) {
           resolve();
         } else {
-          reject(new Error(`${method} failed with code ${code}: ${stderr}`));
+          reject(new Error(`${method} failed with code ${code}: ${stderr || stdout}`));
         }
       });
 
@@ -106,24 +134,84 @@ class SimpleClipboardManager {
       });
 
       // Write text to stdin
-      child.stdin.write(text);
-      child.stdin.end();
+      try {
+        child.stdin.write(text);
+        child.stdin.end();
+      } catch (writeError) {
+        reject(new Error(`Failed to write to ${method}: ${writeError.message}`));
+        return;
+      }
 
       // Set timeout
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         child.kill();
         reject(new Error(`${method} operation timed out`));
       }, this.config.timeout);
+
+      // Clear timeout on successful completion
+      child.on('close', () => {
+        clearTimeout(timeoutId);
+      });
     });
   }
 
   /**
-   * Read from clipboard (simplified - just return empty for now)
+   * Read from clipboard
    */
   async read() {
-    // For simplicity, we'll just return empty string
-    // In a real implementation, you'd use platform-specific read commands
-    return '';
+    const platform = os.platform();
+
+    try {
+      switch (platform) {
+        case 'win32':
+          // Try PowerShell first
+          try {
+            const result = execSync('powershell -Command "Get-Clipboard"', {
+              encoding: 'utf8',
+              stdio: 'pipe',
+              timeout: this.config.timeout
+            });
+            return result.trim();
+          } catch (psError) {
+            // Fallback: Windows doesn't have a simple command-line clipboard read
+            return '';
+          }
+
+        case 'darwin':
+          const macResult = execSync('pbpaste', {
+            encoding: 'utf8',
+            stdio: 'pipe',
+            timeout: this.config.timeout
+          });
+          return macResult.trim();
+
+        case 'linux':
+          try {
+            const linuxResult = execSync('xclip -selection clipboard -o', {
+              encoding: 'utf8',
+              stdio: 'pipe',
+              timeout: this.config.timeout
+            });
+            return linuxResult.trim();
+          } catch (xclipError) {
+            try {
+              const xselResult = execSync('xsel --clipboard --output', {
+                encoding: 'utf8',
+                stdio: 'pipe',
+                timeout: this.config.timeout
+              });
+              return xselResult.trim();
+            } catch (xselError) {
+              return '';
+            }
+          }
+
+        default:
+          return '';
+      }
+    } catch (error) {
+      return '';
+    }
   }
 
   /**

@@ -310,11 +310,18 @@ program
       // Check ssh-keygen availability
       try {
         const { execSync } = require("child_process");
-        execSync("ssh-keygen -h", { stdio: "ignore" });
+        execSync("ssh-keygen -?", { stdio: "pipe" });
         log.success("ssh-keygen available");
       } catch (error) {
-        log.error("ssh-keygen not found");
-        log.dim("Install OpenSSH to use this tool");
+        // ssh-keygen -? returns non-zero but shows usage if available
+        if (error.stderr && error.stderr.includes('usage: ssh-keygen')) {
+          log.success("ssh-keygen available");
+        } else if (error.stdout && error.stdout.includes('usage: ssh-keygen')) {
+          log.success("ssh-keygen available");
+        } else {
+          log.error("ssh-keygen not found");
+          log.dim("Install OpenSSH to use this tool");
+        }
       }
 
       // Platform info
